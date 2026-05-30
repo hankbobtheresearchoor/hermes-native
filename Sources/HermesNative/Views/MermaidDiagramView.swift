@@ -113,10 +113,6 @@ private struct NativeMermaidRenderer: View {
     @State private var errorText: String?
     @State private var didFallBack = false
 
-    private var asciiSource: String {
-        source.unicodeScalars.filter { $0.isASCII }.map(String.init).joined()
-    }
-
     var body: some View {
         Group {
             if let image {
@@ -136,7 +132,7 @@ private struct NativeMermaidRenderer: View {
     }
 
     private func render() {
-        let code = asciiSource
+        let code = source
         guard !code.isEmpty else {
             errorText = "Empty source after cleaning fences"
             return
