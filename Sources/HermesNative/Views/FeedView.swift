@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import os.log
 
 // MARK: - Feed View
 
@@ -547,7 +548,43 @@ struct NativeVideoPlayer: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: AVPlayerView, context: Context) {
-        nsView.player = player
+        if nsView.player !== player {
+            nsView.player = player
+            // Observe player item status for debugging
+            if let item = player?.currentItem {
+                context.coordinator.observe(item: item)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    class Coordinator {
+        private var statusObserver: NSKeyValueObservation?
+        private var errorObserver: NSKeyValueObservation?
+
+        func observe(item: AVPlayerItem) {
+            statusObserver?.invalidate()
+            errorObserver?.invalidate()
+            statusObserver = item.observe(\.status, options: [.new]) { item, _ in
+                switch item.status {
+                case .failed:
+                    let err = item.error?.localizedDescription ?? "unknown"
+                    os.Logger(subsystem: "com.researchoors.HermesNative", category: "VideoPlayer")
+                        .error("AVPlayerItem failed: \(err)")
+                case .readyToPlay:
+                    os.Logger(subsystem: "com.researchoors.HermesNative", category: "VideoPlayer")
+                        .info("AVPlayerItem ready to play")
+                default: break
+                }
+            }
+            errorObserver = item.observe(\.error, options: [.new]) { item, _ in
+                if let err = item.error {
+                    os.Logger(subsystem: "com.researchoors.HermesNative", category: "VideoPlayer")
+                        .error("AVPlayerItem error: \(err.localizedDescription)")
+                }
+            }
+        }
     }
 }
 #endif
