@@ -1,6 +1,5 @@
 import SwiftUI
 import AVKit
-import os.log
 
 // MARK: - Feed View
 
@@ -495,96 +494,52 @@ struct VideoPlayerView: View {
     let videoURL: String; let thumbnailURL: String
     @Binding var isPlaying: Bool
     @State private var player: AVPlayer?
-    @State private var playerItem: AVPlayerItem?
 
     var body: some View {
         #if os(macOS)
-        NativeVideoPlayer(player: player)
-            .onAppear { setupPlayer() }
-            .onDisappear { teardownPlayer() }
-            .onChange(of: isPlaying) { _, playing in
-                if playing { player?.play() } else { player?.pause() }
-            }
+        NativeVideoPlayer(player: player, videoURL: videoURL)
+            .onAppear { if let url = URL(string: videoURL) { player = AVPlayer(url: url) } }
+            .onDisappear { player?.pause(); player = nil }
         #else
         VideoPlayer(player: player)
-            .onAppear { setupPlayer() }
-            .onDisappear { teardownPlayer() }
-            .onChange(of: isPlaying) { _, playing in
-                if playing { player?.play() } else { player?.pause() }
-            }
+            .onAppear { if let url = URL(string: videoURL) { player = AVPlayer(url: url) } }
+            .onDisappear { player?.pause(); player = nil }
         #endif
-    }
-
-    private func setupPlayer() {
-        guard let url = URL(string: videoURL) else { return }
-        let item = AVPlayerItem(url: url)
-        self.playerItem = item
-        let p = AVPlayer(playerItem: item)
-        self.player = p
-        if isPlaying { p.play() }
-    }
-
-    private func teardownPlayer() {
-        player?.pause()
-        player?.replaceCurrentItem(with: nil)
-        player = nil
-        playerItem = nil
     }
 }
 
 #if os(macOS)
 import AppKit
+import WebKit
 
-/// Native AVPlayerView wrapper for macOS (much more reliable than SwiftUI VideoPlayer).
+/// WKWebView video player for macOS — HTML5 <video> is the most reliable playback method.
 struct NativeVideoPlayer: NSViewRepresentable {
     let player: AVPlayer?
+    let videoURL: String
 
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        view.controlsStyle = .inline
-        view.showsFullScreenToggleButton = true
-        view.allowsPictureInPicturePlayback = true
-        return view
+    func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.mediaPlaybackRequiresUserAction = false
+        config.allowsInlineMediaPlayback = true
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.setValue(false, forKey: "drawsBackground")
+        if let url = URL(string: videoURL) {
+            let html = """
+            <html><head><meta name="viewport" content="width=device-width"></head>
+            <body style="margin:0;background:#000">
+            <video src="\(url.absoluteString)" controls autoplay playsinline
+             style="width:100%;height:100%"></video>
+            </body></html>
+            """
+            webView.loadHTMLString(html, baseURL: nil)
+        }
+        return webView
     }
 
-    func updateNSView(_ nsView: AVPlayerView, context: Context) {
-        if nsView.player !== player {
-            nsView.player = player
-            // Observe player item status for debugging
-            if let item = player?.currentItem {
-                context.coordinator.observe(item: item)
-            }
-        }
-    }
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    class Coordinator {
-        private var statusObserver: NSKeyValueObservation?
-        private var errorObserver: NSKeyValueObservation?
-
-        func observe(item: AVPlayerItem) {
-            statusObserver?.invalidate()
-            errorObserver?.invalidate()
-            statusObserver = item.observe(\.status, options: [.new]) { item, _ in
-                switch item.status {
-                case .failed:
-                    let err = item.error?.localizedDescription ?? "unknown"
-                    os.Logger(subsystem: "com.researchoors.HermesNative", category: "VideoPlayer")
-                        .error("AVPlayerItem failed: \(err)")
-                case .readyToPlay:
-                    os.Logger(subsystem: "com.researchoors.HermesNative", category: "VideoPlayer")
-                        .info("AVPlayerItem ready to play")
-                default: break
-                }
-            }
-            errorObserver = item.observe(\.error, options: [.new]) { item, _ in
-                if let err = item.error {
-                    os.Logger(subsystem: "com.researchoors.HermesNative", category: "VideoPlayer")
-                        .error("AVPlayerItem error: \(err.localizedDescription)")
-                }
-            }
-        }
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: ()) {
+        nsView.loadHTMLString("<html><body></body></html>", baseURL: nil)
     }
 }
 #endif
