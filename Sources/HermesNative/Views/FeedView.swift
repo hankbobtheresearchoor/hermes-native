@@ -523,15 +523,9 @@ struct NativeVideoPlayer: NSViewRepresentable {
         config.allowsInlineMediaPlayback = true
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
+        // Navigate directly to video URL — WKWebView plays video natively
         if let url = URL(string: videoURL) {
-            let html = """
-            <html><head><meta name="viewport" content="width=device-width"></head>
-            <body style="margin:0;background:#000">
-            <video src="\(url.absoluteString)" controls autoplay playsinline
-             style="width:100%;height:100%"></video>
-            </body></html>
-            """
-            webView.loadHTMLString(html, baseURL: nil)
+            webView.load(URLRequest(url: url))
         }
         return webView
     }
@@ -539,7 +533,7 @@ struct NativeVideoPlayer: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 
     static func dismantleNSView(_ nsView: WKWebView, coordinator: ()) {
-        nsView.loadHTMLString("<html><body></body></html>", baseURL: nil)
+        nsView.stopLoading()
     }
 }
 #endif
